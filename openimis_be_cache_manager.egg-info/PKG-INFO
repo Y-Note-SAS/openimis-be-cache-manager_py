@@ -1,0 +1,20 @@
+Metadata-Version: 2.1
+Name: openimis-be-cache-manager
+Version: 1.0.0
+Summary: The openIMIS Backend cache_manager reference module.
+Home-page: https://openimis.org/
+Author: TCHINWA Ismael
+Author-email: i.tchinwa@y-note.cm
+License: GNU AGPL v3
+Classifier: Environment :: Web Environment
+Classifier: Framework :: Django
+Classifier: Framework :: Django :: 3.0
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: GNU Affero General Public License v3
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE.md
+
+# openIMIS Backend cache_manager reference module
