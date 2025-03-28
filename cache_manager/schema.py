@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.utils.translation import gettext as _
 from core.schema import OpenIMISMutation
-# from policy.models import clean_all_enquire_cache_product
+from policy.models import clean_all_enquire_cache_product
 from django.db.models import Q
 from core import filter_validity
 from cache_manager.services import CacheService
@@ -56,8 +56,7 @@ def clear_cache_graph(cache, model=None, user=None):
         case "location_user":
             free_cache_for_user(user.id)
         case "coverage":
-            # clean_all_enquire_cache_product()
-            print('2')
+            clean_all_enquire_cache_product()
         case _:
             cache.clear()
 
