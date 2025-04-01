@@ -205,7 +205,7 @@ class Query(graphene.ObjectType):
             case "extract":
                 valid_items_count = Extract.objects.filter(validity_to__isnull=True).count()
             case "location_user":
-                valid_items_count = len(cache_info_list)
+                valid_items_count = Location.objects.filter(validity_to__isnull=True).count() + 3 
             case _:
                 valid_items_count = 0  
 
