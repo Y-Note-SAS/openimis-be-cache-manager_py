@@ -6,6 +6,7 @@ cache_manager/admin.py
 cache_manager/apps.py
 cache_manager/models.py
 cache_manager/schema.py
+cache_manager/services.py
 cache_manager/tests.py
 cache_manager/urls.py
 cache_manager/views.py
