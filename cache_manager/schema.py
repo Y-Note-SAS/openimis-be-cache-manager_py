@@ -235,7 +235,7 @@ class ClearCacheMutation(OpenIMISMutation):
     _mutation_class = "ClearCacheMutation"
 
     class Input(OpenIMISMutation.Input):
-        model = graphene.String()
+        models = graphene.List(graphene.String)    
 
 
     @classmethod
@@ -244,8 +244,12 @@ class ClearCacheMutation(OpenIMISMutation):
         try:
             if type(user) is AnonymousUser or not user.id:
                 raise ValidationError(_("mutation.authentication_required"))
-            model = data.get("model", None)
-            if model:
+            models = data.get("models", None)
+
+            if not models:
+                raise ValidationError(_("models_cannot_be_null"))
+
+            for model in models:
                 model = model.lower()
                 if model in caches or model == "location_user":
                     cache = caches['location'] if model == "location_user" else caches[model]
@@ -258,19 +262,19 @@ class ClearCacheMutation(OpenIMISMutation):
                         case _:
                             raise ValidationError(_("model_does_not_define"))
 
-                    return None
+
                 elif model in openimis_models:
                     CacheService.clear_all_model_cache(model)
-                    return None
+
                 else:
                     raise ValidationError(_(f"The cache for model '{model}' does not exist."))
-            else:
-                raise ValidationError(_("model_cannot_be_null"))
+
+            return None 
         except Exception as exc:
             return [
                 {
                     "message": _("cache_manager.mutation.failed_to_clear_cache")
-                    % {"model": data["model"]},
+                    % {"models": str(data["models"])},
                     "detail": str(exc),
                 }
             ]
