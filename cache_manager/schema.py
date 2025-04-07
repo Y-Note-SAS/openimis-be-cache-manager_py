@@ -4,15 +4,16 @@ import graphene
 from django.core.cache import caches
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
-from location.models import free_cache_for_user
+from location.models import free_cache_for_user, Location
 logger = logging.getLogger(__name__)
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.utils.translation import gettext as _
 from core.schema import OpenIMISMutation
-from policy.models import clean_all_enquire_cache_product
+# from policy.models import clean_all_enquire_cache_product
 from django.db.models import Q
 from core import filter_validity
 from cache_manager.services import CacheService
+from django.utils.translation import gettext as _
 
 class CacheInfoType(graphene.ObjectType):
     cache_name = graphene.String()
@@ -37,15 +38,8 @@ class CacheInfoConnection(graphene.ObjectType):
     max_item_count = graphene.Int()
     page_info = graphene.Field(PageInfoType)
     edges = graphene.List(CacheInfoEdge)
+    
 
-def clear_cache_graph(cache, model=None, user=None):
-    match model:
-        case "location_user":
-            free_cache_for_user(user.id)
-        case "coverage":
-            clean_all_enquire_cache_product()
-        case _:
-            cache.clear()
 
 class Query(graphene.ObjectType):
     cache_info = graphene.Field(
@@ -123,12 +117,14 @@ class ClearCacheMutation(OpenIMISMutation):
             for model in models:
                 model = model.lower()
                 if model in caches or model == "location_user":
-                    cache = caches['location'] if model == "location_user" else caches[model]
+                    # cache = caches['location'] if model == "location_user" else caches[model]
                     match model:
                         case "location_user":
-                            clear_cache_graph(cache, model, user)
+                            # free_cache_for_user(user.id)
+                            CacheService.clear_module_cache("location")
                         case "coverage":
-                            clear_cache_graph(cache, model, user)
+                            # clean_all_enquire_cache_product()
+                            CacheService.clear_module_cache(model)
                         case _:
                             raise ValidationError(_("model_does_not_define"))
                 elif model in openimis_models:
@@ -145,5 +141,37 @@ class ClearCacheMutation(OpenIMISMutation):
                 }
             ]
 
+class PreheatCacheMutation(OpenIMISMutation):
+    _mutation_module = "cache_manager"
+    _mutation_class = "PreheatCacheMutation"
+
+    class Input(OpenIMISMutation.Input):
+        model = graphene.String(required=True)
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if user.is_anonymous or not user.id:
+                raise ValidationError(_("authentication_required"))
+            
+            model = data.get("model")
+            if not model:
+                raise ValidationError(_("Model_cannot_be_null"))
+
+            result = CacheService.preload_model_cache(model, user)
+            
+            if result:
+                return None 
+            else:
+                raise ValidationError(_("Failed_to_preheat_the_cache."))
+        except Exception as exc:
+            return [
+                {
+                    "message": _("Failed_to_preheat_cache_for_model:") + str(data["model"]),
+                    "detail": str(exc),
+                }
+            ]
+
 class Mutation(graphene.ObjectType):
     clear_cache = ClearCacheMutation.Field()
+    preheat_cache = PreheatCacheMutation.Field()

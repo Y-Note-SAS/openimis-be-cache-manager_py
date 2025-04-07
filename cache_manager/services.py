@@ -1,6 +1,10 @@
 # services.py
+from django.db import models
+from django.core.exceptions import ValidationError
+from django.utils.translation import gettext as _
 from django.core.cache import caches
-from location.models import Location, HealthFacility, UserDistrict, OfficerVillage
+from django.conf import settings
+from location.models import Location, HealthFacility, UserDistrict, OfficerVillage, LocationManager
 from insuree.models import InsureePolicy
 from claim.models import (ClaimDedRem, Claim, ClaimAdmin, Feedback, ClaimItem, ClaimService, ClaimAttachment,
                           ClaimAttachmentType, FeedbackPrompt)
@@ -28,19 +32,35 @@ class CacheService:
         if model and model in CacheService.openimis_models:
             prefix = CacheService.MODEL_PREFIXES[model] 
             keys = redis_client.scan_iter(match=f'{prefix}*')
-
-            print(f"voici bien le modele: {model}")
+            
+            for key in keys:
+                key_str = key.decode('utf-8')
+                redis_client.delete(key_str)
+            return None
+        
+    @staticmethod
+    def clear_module_cache(model):
+        cache = caches[model]
+        redis_client = cache.client.get_client()
+        redis_client.select(0)
+        if model and model in CacheService.cache_modules:
+            cache_config = settings.CACHES[model]
+            prefix = cache_config.get('KEY_PREFIX', '')
+            keys = redis_client.scan_iter(match=f'{prefix}*')
+            
             for key in keys:
                 key_str = key.decode('utf-8')
                 redis_client.delete(key_str)
             return None
 
+    cache_modules = {'location', 'coverage'}
     
-    openimis_models = {'location_user', 'coverage', 'location', 'claim_admin', 'feedback', 'claim', 'feedback_prompt', 'claim_item', 'claim_attachment_type', 'claim_attachment', 'claim_service', 
-                   'claim_ded_rem', 'premium', 'history_business_model', 'role', 'role_right', 'interactive_user', 'user_role', 'user', 'officer', 
-                   'cheque_import', 'cheque_import_line', 'cheque_updated_history', 'individual', 'individual_data_source_upload', 'individual_data_source', 'group', 
-                   'group_individual', 'insuree_photo', 'family', 'insuree_status_reason', 'insuree', 'insuree_policy', 'policy_renewal_detail', 'health_facility', 'user_district', 
-                   'officer_village', 'diagnosis', 'item', 'service', 'policy', 'policy_renewal', 'product', 'product_item', 'product_service', 'extract'}
+    openimis_models = {'location_user', 'coverage', 'claim_admin', 'claim', 'claim_item', 'claim_attachment_type', 'claim_attachment',
+                   'claim_service','claim_ded_rem', 'premium', 'role', 'role_right', 'interactive_user', 'user_role', 'user', 'officer', 
+                   'insuree_photo', 'family', 'insuree', 'insuree_policy', 'health_facility', 'user_district', 'location', 'officer_village', 
+                   'feedback_prompt', 'diagnosis', 'item', 'service', 'policy', 'policy_renewal', 'product', 'product_service', 'extract'}
+    #'individual', 'individual_data_source_upload', 'individual_data_source', 'group', 'group_individual', 'history_business_model', 
+    # 'cheque_import', 'cheque_import_line', 'cheque_updated_history', 'product_item','feedback', 'policy_renewal_detail', 'insuree_status_reason',  
 
     MODEL_PREFIXES = {
         'services_pricelist': 'oi:1:ServicesPricelist:',
@@ -156,6 +176,8 @@ class CacheService:
                         valid_items_count = InsureePolicy.objects.filter(validity_to__isnull=True).count()
                     case "policy_renewal_detail":
                         valid_items_count = PolicyRenewalDetail.objects.filter(validity_to__isnull=True).count()
+                    case "policy_renewal":
+                        valid_items_count = PolicyRenewal.objects.filter(validity_to__isnull=True).count()
                     case "health_facility":
                         valid_items_count = HealthFacility.objects.filter(validity_to__isnull=True).count()
                     case "user_district":
@@ -186,3 +208,86 @@ class CacheService:
                         valid_items_count = 0
             return valid_items_count
 
+
+    @staticmethod
+    def get_model_class(model):
+        """
+        Returns the corresponding Django model class based on the model name.
+        """
+        model_classes = {
+            'location': Location,
+            'claim_admin': ClaimAdmin,
+            'feedback': Feedback,
+            'claim': Claim,
+            'feedback_prompt': FeedbackPrompt,
+            'claim_item': ClaimItem,
+            'claim_attachment_type': ClaimAttachmentType,
+            'claim_attachment': ClaimAttachment,
+            'claim_service': ClaimService,
+            'claim_ded_rem': ClaimDedRem,
+            'premium': Premium,
+            'role': Role,
+            'role_right': RoleRight,
+            'interactive_user': InteractiveUser,
+            'user_role': UserRole,
+            'user': User,
+            'officer': Officer,
+            'insuree_photo': InsureePhoto,
+            'family': Family,
+            'insuree_status_reason': InsureeStatusReason,
+            'insuree': Insuree,
+            'insuree_policy': InsureePolicy,
+            'health_facility': HealthFacility,
+            'user_district': UserDistrict,
+            'officer_village': OfficerVillage,
+            'diagnosis': Diagnosis,
+            'item': Item,
+            'service': Service,
+            'policy': Policy,
+            'policy_renewal': PolicyRenewal,
+            'product': Product,
+            'product_service': ProductService,
+            'extract': Extract
+        }
+        
+        cache_modules = {
+            'location_user': Location,
+            'coverage': InsureePolicy,
+        }
+
+        if model in model_classes:
+            return model_classes[model], True
+        elif model in cache_modules:
+            return cache_modules[model], False
+        else:
+            raise ValidationError(_("Model_not_found_for_preloading"))
+
+    @staticmethod
+    def preload_model_cache(model, user):
+        """
+        Preheats the cache by loading all the data of the specified model.
+        """
+        CACHE_TIMEOUT = None
+        try:
+            
+            if model not in CacheService.openimis_models:
+                raise ValidationError(_("Unsupported_model_for_cache_preheating"))
+            
+            model_class, is_model = CacheService.get_model_class(model)
+            all_objects = model_class.objects.filter(validity_to__isnull=True)
+            cache_data = {}
+            
+            if is_model:
+                cache = caches['default']
+                for obj in all_objects:
+                    cache_data[get_cache_key(model_class, obj.id)] = obj
+                    
+                cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
+            
+            return True
+        except Exception as exc:
+            raise ValidationError(_("Error_during_cache_preheating:") + str(exc))
+
+# Generation of the object key
+def get_cache_key(model, id):
+    return f"{model.__name__}:{id}"
