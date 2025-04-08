@@ -35,7 +35,6 @@ class CacheInfoEdge(graphene.ObjectType):
 
 class CacheInfoConnection(graphene.ObjectType):
     total_count = graphene.Int()
-    max_item_count = graphene.Int()
     page_info = graphene.Field(PageInfoType)
     edges = graphene.List(CacheInfoEdge)
     
@@ -45,10 +44,13 @@ class Query(graphene.ObjectType):
     cache_info = graphene.Field(
         CacheInfoConnection,
         model=graphene.String(required=False),
-        order_by=graphene.List(graphene.String)
+        order_by=graphene.List(graphene.String),
+        first=graphene.Int(), 
+        after=graphene.String(),
+        before=graphene.String(),
     )
 
-    def resolve_cache_info(self, info):
+    def resolve_cache_info(self, info, model=None, order_by=None, first=10, after=None, before=None):
         openimis_models = CacheService.openimis_models
         MODEL_PREFIXES = CacheService.MODEL_PREFIXES
         
@@ -82,19 +84,44 @@ class Query(graphene.ObjectType):
             ))
 
         total_count = len(cache_info_list)
+            
+        if after:
+            start_index = next((i for i, cache_info in enumerate(cache_info_list) if cache_info.cache_name == after), -1)
+            if start_index != -1:
+                start_index += 1 
+            else:
+                start_index = 0
+        elif before:
+            start_index = next((i for i, cache_info in enumerate(cache_info_list) if cache_info.cache_name == before), len(cache_info_list))
+            start_index = max(0, start_index - first)
+        else:
+            start_index = 0
+        
+        # Get the page slice based on 'first'
+        cache_info_list_page = cache_info_list[start_index:start_index + first]
+
+        # Determine if there are more pages
+        has_next_page = start_index + first < total_count
+        has_previous_page = start_index > 0
+
+        # Get the start and end cursors
+        start_cursor = cache_info_list_page[0].cache_name if cache_info_list_page else None
+        end_cursor = cache_info_list_page[-1].cache_name if cache_info_list_page else None
+        
         page_info = PageInfoType(
-            has_next_page=False,
-            has_previous_page=False,
-            start_cursor=cache_info_list[0].cache_name if cache_info_list else None,
-            end_cursor=cache_info_list[-1].cache_name if cache_info_list else None
+            has_next_page=has_next_page,
+            has_previous_page=has_previous_page,
+            start_cursor=start_cursor,
+            end_cursor=end_cursor
         )
-        edges = [CacheInfoEdge(node=cache_info) for cache_info in cache_info_list]
+        
+        edges = [CacheInfoEdge(node=cache_info) for cache_info in cache_info_list_page]
         return CacheInfoConnection(
             total_count=total_count,
-            max_item_count=max_item_count,
             page_info=page_info,
             edges=edges
         )
+        
         
 class ClearCacheMutation(OpenIMISMutation):
     _mutation_module = "cache_manager"

@@ -283,6 +283,16 @@ class CacheService:
                     cache_data[get_cache_key(model_class, obj.id)] = obj
                     
                 cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
+            else:
+                if model == 'location_user':
+                    # cache = caches['location']
+                    all_objects = UserDistrict.get_user_districts(user)
+                else:
+                    cache = caches[model]
+                    for obj in all_objects:
+                        cache_data[get_cache_key_base(model, obj.id)] = obj
+                        
+                    cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
             
             return True
         except Exception as exc:
@@ -291,3 +301,6 @@ class CacheService:
 # Generation of the object key
 def get_cache_key(model, id):
     return f"{model.__name__}:{id}"
+
+def get_cache_key_base(model, id):
+    return f"{model}_{id}"
