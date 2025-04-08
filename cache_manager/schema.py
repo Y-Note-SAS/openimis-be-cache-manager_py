@@ -46,14 +46,14 @@ class Query(graphene.ObjectType):
         model=graphene.String(required=False),
         order_by=graphene.List(graphene.String),
         first=graphene.Int(), 
+        last=graphene.Int(),
         after=graphene.String(),
         before=graphene.String(),
     )
 
-    def resolve_cache_info(self, info, model=None, order_by=None, first=10, after=None, before=None):
+    def resolve_cache_info(self, info, model=None, order_by=None, first=10, last=None, after=None, before=None):
         openimis_models = CacheService.openimis_models
-        MODEL_PREFIXES = CacheService.MODEL_PREFIXES
-        
+                
         cache_info_list = []
         for model in openimis_models:
             model = model.lower()
@@ -71,7 +71,7 @@ class Query(graphene.ObjectType):
             redis_client.select(0)
             prefix = cache_config.get('KEY_PREFIX', '')
             if cache_config == settings.CACHES['default']:
-                prefix = MODEL_PREFIXES.get(model, '')
+                prefix = CacheService.get_prefixed_model(model)
             key_count = sum(1 for _ in redis_client.scan_iter(match=f'{prefix}*'))
 
             max_item_count = CacheService.items_count(model)
@@ -84,24 +84,33 @@ class Query(graphene.ObjectType):
             ))
 
         total_count = len(cache_info_list)
-            
+        
+        cache_name_to_index = {cache_info.cache_name: i for i, cache_info in enumerate(cache_info_list)}
+        start_index = 0
+        
         if after:
-            start_index = next((i for i, cache_info in enumerate(cache_info_list) if cache_info.cache_name == after), -1)
-            if start_index != -1:
-                start_index += 1 
-            else:
-                start_index = 0
+            start_index = cache_name_to_index.get(after, -1) + 1 if after else 0
         elif before:
-            start_index = next((i for i, cache_info in enumerate(cache_info_list) if cache_info.cache_name == before), len(cache_info_list))
+            start_index = cache_name_to_index.get(before, total_count)
             start_index = max(0, start_index - first)
+        elif last:
+            start_index = total_count - last
+            start_index = max(0, start_index)
         else:
             start_index = 0
+            
+        if order_by:
+            cache_info_list.sort(key=lambda x: getattr(x, order_by[0]))
+            
+        if first:
+            cache_info_list_page = cache_info_list[start_index:start_index + first]
+        elif last:
+            cache_info_list_page = cache_info_list[start_index:]
+        else:
+            cache_info_list_page = cache_info_list[start_index:] 
         
-        # Get the page slice based on 'first'
-        cache_info_list_page = cache_info_list[start_index:start_index + first]
-
-        # Determine if there are more pages
-        has_next_page = start_index + first < total_count
+        # Déterminer si il y a plus de pages
+        has_next_page = (start_index + first) < total_count if first else False
         has_previous_page = start_index > 0
 
         # Get the start and end cursors
