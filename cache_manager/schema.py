@@ -4,15 +4,16 @@ import graphene
 from django.core.cache import caches
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
-from location.models import free_cache_for_user
+from location.models import free_cache_for_user, Location
 logger = logging.getLogger(__name__)
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.utils.translation import gettext as _
 from core.schema import OpenIMISMutation
-from policy.models import clean_all_enquire_cache_product
+# from policy.models import clean_all_enquire_cache_product
 from django.db.models import Q
 from core import filter_validity
 from cache_manager.services import CacheService
+from django.utils.translation import gettext as _
 
 class CacheInfoType(graphene.ObjectType):
     cache_name = graphene.String()
@@ -34,30 +35,25 @@ class CacheInfoEdge(graphene.ObjectType):
 
 class CacheInfoConnection(graphene.ObjectType):
     total_count = graphene.Int()
-    max_item_count = graphene.Int()
     page_info = graphene.Field(PageInfoType)
     edges = graphene.List(CacheInfoEdge)
+    
 
-def clear_cache_graph(cache, model=None, user=None):
-    match model:
-        case "location_user":
-            free_cache_for_user(user.id)
-        case "coverage":
-            clean_all_enquire_cache_product()
-        case _:
-            cache.clear()
 
 class Query(graphene.ObjectType):
     cache_info = graphene.Field(
         CacheInfoConnection,
         model=graphene.String(required=False),
-        order_by=graphene.List(graphene.String)
+        order_by=graphene.List(graphene.String),
+        first=graphene.Int(), 
+        last=graphene.Int(),
+        after=graphene.String(),
+        before=graphene.String(),
     )
 
-    def resolve_cache_info(self, info):
+    def resolve_cache_info(self, info, model=None, order_by=None, first=10, last=None, after=None, before=None):
         openimis_models = CacheService.openimis_models
-        MODEL_PREFIXES = CacheService.MODEL_PREFIXES
-        
+                
         cache_info_list = []
         for model in openimis_models:
             model = model.lower()
@@ -75,7 +71,7 @@ class Query(graphene.ObjectType):
             redis_client.select(0)
             prefix = cache_config.get('KEY_PREFIX', '')
             if cache_config == settings.CACHES['default']:
-                prefix = MODEL_PREFIXES.get(model, '')
+                prefix = CacheService.get_prefixed_model(model)
             key_count = sum(1 for _ in redis_client.scan_iter(match=f'{prefix}*'))
 
             max_item_count = CacheService.items_count(model)
@@ -88,19 +84,53 @@ class Query(graphene.ObjectType):
             ))
 
         total_count = len(cache_info_list)
+        
+        cache_name_to_index = {cache_info.cache_name: i for i, cache_info in enumerate(cache_info_list)}
+        start_index = 0
+        
+        if after:
+            start_index = cache_name_to_index.get(after, -1) + 1 if after else 0
+        elif before:
+            start_index = cache_name_to_index.get(before, total_count)
+            start_index = max(0, start_index - first)
+        elif last:
+            start_index = total_count - last
+            start_index = max(0, start_index)
+        else:
+            start_index = 0
+            
+        if order_by:
+            cache_info_list.sort(key=lambda x: getattr(x, order_by[0]))
+            
+        if first:
+            cache_info_list_page = cache_info_list[start_index:start_index + first]
+        elif last:
+            cache_info_list_page = cache_info_list[start_index:]
+        else:
+            cache_info_list_page = cache_info_list[start_index:] 
+        
+        # Déterminer si il y a plus de pages
+        has_next_page = (start_index + first) < total_count if first else False
+        has_previous_page = start_index > 0
+
+        # Get the start and end cursors
+        start_cursor = cache_info_list_page[0].cache_name if cache_info_list_page else None
+        end_cursor = cache_info_list_page[-1].cache_name if cache_info_list_page else None
+        
         page_info = PageInfoType(
-            has_next_page=False,
-            has_previous_page=False,
-            start_cursor=cache_info_list[0].cache_name if cache_info_list else None,
-            end_cursor=cache_info_list[-1].cache_name if cache_info_list else None
+            has_next_page=has_next_page,
+            has_previous_page=has_previous_page,
+            start_cursor=start_cursor,
+            end_cursor=end_cursor
         )
-        edges = [CacheInfoEdge(node=cache_info) for cache_info in cache_info_list]
+        
+        edges = [CacheInfoEdge(node=cache_info) for cache_info in cache_info_list_page]
         return CacheInfoConnection(
             total_count=total_count,
-            max_item_count=max_item_count,
             page_info=page_info,
             edges=edges
         )
+        
         
 class ClearCacheMutation(OpenIMISMutation):
     _mutation_module = "cache_manager"
@@ -123,12 +153,14 @@ class ClearCacheMutation(OpenIMISMutation):
             for model in models:
                 model = model.lower()
                 if model in caches or model == "location_user":
-                    cache = caches['location'] if model == "location_user" else caches[model]
+                    # cache = caches['location'] if model == "location_user" else caches[model]
                     match model:
                         case "location_user":
-                            clear_cache_graph(cache, model, user)
+                            # free_cache_for_user(user.id)
+                            CacheService.clear_module_cache("location")
                         case "coverage":
-                            clear_cache_graph(cache, model, user)
+                            # clean_all_enquire_cache_product()
+                            CacheService.clear_module_cache(model)
                         case _:
                             raise ValidationError(_("model_does_not_define"))
                 elif model in openimis_models:
@@ -145,5 +177,37 @@ class ClearCacheMutation(OpenIMISMutation):
                 }
             ]
 
+class PreheatCacheMutation(OpenIMISMutation):
+    _mutation_module = "cache_manager"
+    _mutation_class = "PreheatCacheMutation"
+
+    class Input(OpenIMISMutation.Input):
+        model = graphene.String(required=True)
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            if user.is_anonymous or not user.id:
+                raise ValidationError(_("authentication_required"))
+            
+            model = data.get("model")
+            if not model:
+                raise ValidationError(_("Model_cannot_be_null"))
+
+            result = CacheService.preload_model_cache(model, user)
+            
+            if result:
+                return None 
+            else:
+                raise ValidationError(_("Failed_to_preheat_the_cache."))
+        except Exception as exc:
+            return [
+                {
+                    "message": _("Failed_to_preheat_cache_for_model:") + str(data["model"]),
+                    "detail": str(exc),
+                }
+            ]
+
 class Mutation(graphene.ObjectType):
     clear_cache = ClearCacheMutation.Field()
+    preheat_cache = PreheatCacheMutation.Field()
