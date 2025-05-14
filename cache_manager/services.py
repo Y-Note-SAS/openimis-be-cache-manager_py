@@ -17,6 +17,8 @@ from tools.models import Extract
 from contribution.models import Premium
 from cs.models import ChequeImport, ChequeImportLine, ChequeUpdatedHistory
 from core.models import Role, User, RoleRight, InteractiveUser, UserRole, Officer
+from django.db.models import QuerySet
+from itertools import islice
 
 class CacheService:
     
@@ -31,7 +33,7 @@ class CacheService:
         redis_client.select(0)
         if model and model in CacheService.openimis_models:
             prefix = CacheService.get_prefixed_model(model)
-            keys = redis_client.scan_iter(match=f'{prefix}*')
+            keys = redis_client.scan_iter(match=f'{prefix}*', count=1000)
             
             for key in keys:
                 key_str = key.decode('utf-8')
@@ -46,7 +48,7 @@ class CacheService:
         if model and model in CacheService.cache_modules:
             cache_config = settings.CACHES[model]
             prefix = cache_config.get('KEY_PREFIX', '')
-            keys = redis_client.scan_iter(match=f'{prefix}*')
+            keys = redis_client.scan_iter(match=f'{prefix}*', count=1000)
             
             for key in keys:
                 key_str = key.decode('utf-8')
@@ -158,6 +160,7 @@ class CacheService:
         Preheats the cache by loading all the data of the specified model.
         """
         CACHE_TIMEOUT = None
+        BATCH_SIZE = 1000
         try:
             
             if model not in CacheService.openimis_models:
@@ -169,20 +172,32 @@ class CacheService:
             
             if is_model:
                 cache = caches['default']
-                for obj in all_objects:
-                    cache_data[get_cache_key(model_class, obj.id)] = obj
+                # for obj in all_objects:
+                #     cache_data[get_cache_key(model_class, obj.id)] = obj
                     
-                cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
+                # cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
+                for chunk in chunked_queryset(all_objects, BATCH_SIZE):
+                    cache_data = {
+                        get_cache_key(model_class, obj.id): obj
+                        for obj in chunk
+                    }
+                    cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
             else:
                 if model == 'location_user':
                     # cache = caches['location']
                     all_objects = UserDistrict.get_user_districts(user)
                 else:
                     cache = caches[model]
-                    for obj in all_objects:
-                        cache_data[get_cache_key_base(model, obj.id)] = obj
+                    # for obj in all_objects:
+                    #     cache_data[get_cache_key_base(model, obj.id)] = obj
                         
-                    cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
+                    # cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
+                    for chunk in chunked_queryset(all_objects, BATCH_SIZE):
+                        cache_data = {
+                            get_cache_key_base(model, obj.id): obj
+                            for obj in chunk
+                        }
+                        cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
             
             return True
         except Exception as exc:
@@ -194,3 +209,17 @@ def get_cache_key(model, id):
 
 def get_cache_key_base(model, id):
     return f"{model}_{id}"
+
+BATCH_SIZE = 1000
+
+def chunked_queryset(qs: QuerySet, batch_size: int):
+    """
+    Generator to yield queryset in chunks to avoid memory overload.
+    """
+    start = 0
+    while True:
+        chunk = list(qs[start:start+batch_size])
+        if not chunk:
+            break
+        yield chunk
+        start += batch_size
