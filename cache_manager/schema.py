@@ -72,7 +72,7 @@ class Query(graphene.ObjectType):
             prefix = cache_config.get('KEY_PREFIX', '')
             if cache_config == settings.CACHES['default']:
                 prefix = CacheService.get_prefixed_model(model)
-            key_count = sum(1 for _ in redis_client.scan_iter(match=f'{prefix}*', count=10000))
+            key_count = sum(1 for _ in redis_client.scan_iter(match=f'{prefix}*', count=100000))
 
             max_item_count = CacheService.items_count(model)
             total_count = key_count
