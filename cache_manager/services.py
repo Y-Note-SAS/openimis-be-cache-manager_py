@@ -33,7 +33,7 @@ class CacheService:
         redis_client.select(0)
         if model and model in CacheService.openimis_models:
             prefix = CacheService.get_prefixed_model(model)
-            keys = redis_client.scan_iter(match=f'{prefix}*', count=1000)
+            keys = redis_client.scan_iter(match=f'{prefix}*', count=10000)
             
             for key in keys:
                 key_str = key.decode('utf-8')
@@ -48,7 +48,7 @@ class CacheService:
         if model and model in CacheService.cache_modules:
             cache_config = settings.CACHES[model]
             prefix = cache_config.get('KEY_PREFIX', '')
-            keys = redis_client.scan_iter(match=f'{prefix}*', count=1000)
+            keys = redis_client.scan_iter(match=f'{prefix}*', count=10000)
             
             for key in keys:
                 key_str = key.decode('utf-8')
@@ -160,14 +160,14 @@ class CacheService:
         Preheats the cache by loading all the data of the specified model.
         """
         CACHE_TIMEOUT = None
-        BATCH_SIZE = 1000
+        BATCH_SIZE = 10000
         try:
             
             if model not in CacheService.openimis_models:
                 raise ValidationError(_("Unsupported_model_for_cache_preheating"))
             
             model_class, is_model = CacheService.get_model_class(model)
-            all_objects = model_class.objects.filter(validity_to__isnull=True)
+            all_objects = model_class.objects.filter(validity_to__isnull=True).only("id")
             cache_data = {}
             
             if is_model:
@@ -178,7 +178,7 @@ class CacheService:
                 # cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
                 for chunk in chunked_queryset(all_objects, BATCH_SIZE):
                     cache_data = {
-                        get_cache_key(model_class, obj.id): obj
+                        get_cache_key(model_class, obj.id): {"id": obj.id}
                         for obj in chunk
                     }
                     cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
@@ -210,7 +210,7 @@ def get_cache_key(model, id):
 def get_cache_key_base(model, id):
     return f"{model}_{id}"
 
-BATCH_SIZE = 1000
+BATCH_SIZE = 10000
 
 def chunked_queryset(qs: QuerySet, batch_size: int):
     """
