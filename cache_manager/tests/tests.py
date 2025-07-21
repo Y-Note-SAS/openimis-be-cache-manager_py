@@ -28,6 +28,16 @@ class CacheManagerTestCase(openIMISGraphQLTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        
+        caches.settings["default"] = {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'default-test'
+        }
+        caches.settings["location"] = {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'location-test'
+        }
+        
         cls.test_village = create_test_village()
         cls.location = cls.test_village 
         cls.test_insuree = create_test_insuree(
@@ -40,9 +50,7 @@ class CacheManagerTestCase(openIMISGraphQLTestCase):
         cls.admin_token = get_token(cls.admin_user, DummyContext(user=cls.admin_user))
 
         # Use default cache and flush Redis DB before each test
-        cls.cache = caches['default']
-        cls.redis_client = get_redis_connection('default')
-        cls.redis_client.flushdb()
+        cls.cache = caches['default'] 
 
     def test_cache_info_query(self):
         query = """
