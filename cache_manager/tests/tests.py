@@ -160,7 +160,8 @@ class CacheManagerTestCase(openIMISGraphQLTestCase):
         self.assertIsNotNone(self.cache.get(cache_key))
 
         # Mock clear_all_model_cache to remove keys with the specified prefix
-        with patch.object(CacheService, 'clear_all_model_cache') as mock_clear:
+        # with patch.object(CacheService, 'clear_all_model_cache') as mock_clear:
+        with patch('cache_manager.schema.CacheService.clear_all_model_cache') as mock_clear:
             mock_clear.side_effect = lambda model: [
                 self.fake_redis_store.pop(k, None)
                 for k in list(self.fake_redis_store.keys())
