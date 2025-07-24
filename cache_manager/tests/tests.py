@@ -177,6 +177,7 @@ class CacheManagerTestCase(openIMISGraphQLTestCase):
                 mutation,
                 headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"},
             )
+            mock_clear.assert_called_once_with('insuree')
         print(f"Cache after clearCache: {self.fake_redis_store}")
         self.assertResponseNoErrors(response)
         self.assertIsNone(self.cache.get(cache_key))
