@@ -4,24 +4,25 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
 from django.core.cache import caches
 from django.conf import settings
-from location.models import Location, HealthFacility, UserDistrict, OfficerVillage, LocationManager
+from location.models import Location, HealthFacility, UserDistrict, OfficerVillage
 from insuree.models import InsureePolicy
 from claim.models import (ClaimDedRem, Claim, ClaimAdmin, Feedback, ClaimItem, ClaimService, ClaimAttachment,
                           ClaimAttachmentType, FeedbackPrompt)
-from insuree.models import Insuree, InsureePhoto, Family, InsureePolicy, InsureeStatusReason, PolicyRenewalDetail
+from insuree.models import Insuree, InsureePhoto, Family, InsureePolicy, InsureeStatusReason
 from individual.models import Individual, IndividualDataSource, Group, GroupIndividual, IndividualDataSourceUpload
 from medical.models import Diagnosis, Item, Service
 from policy.models import Policy, PolicyRenewal
-from product.models import Product, ProductItem, ProductService
+from product.models import Product, ProductService
 from tools.models import Extract
 from contribution.models import Premium
 from cs.models import ChequeImport, ChequeImportLine, ChequeUpdatedHistory
 from core.models import Role, User, RoleRight, InteractiveUser, UserRole, Officer
 from django.db.models import QuerySet
-from itertools import islice
+from core.utils import get_cache_key
+
 
 class CacheService:
-    
+
     def __init__(self, user):
         self.user = user
 
@@ -34,12 +35,12 @@ class CacheService:
         if model and model in CacheService.openimis_models:
             prefix = CacheService.get_prefixed_model(model)
             keys = redis_client.scan_iter(match=f'{prefix}*', count=10000)
-            
+
             for key in keys:
                 key_str = key.decode('utf-8')
                 redis_client.delete(key_str)
             return None
-        
+
     @staticmethod
     def clear_module_cache(model):
         cache = caches[model]
@@ -49,14 +50,14 @@ class CacheService:
             cache_config = settings.CACHES[model]
             prefix = cache_config.get('KEY_PREFIX', '')
             keys = redis_client.scan_iter(match=f'{prefix}*', count=10000)
-            
+
             for key in keys:
                 key_str = key.decode('utf-8')
                 redis_client.delete(key_str)
             return None
 
     cache_modules = {'location', 'coverage'}
-    
+
     openimis_models = {'location_user', 'coverage', 'claim_admin', 'claim', 'claim_item', 'claim_attachment_type', 'claim_attachment',
                    'claim_service','claim_ded_rem', 'premium', 'role', 'role_right', 'interactive_user', 'user_role', 'user', 'officer', 
                    'insuree_photo', 'family', 'insuree', 'insuree_policy', 'health_facility', 'user_district', 'location', 'officer_village', 
@@ -69,9 +70,9 @@ class CacheService:
         """
         Retourne le modèle avec le préfixe 'oi:1:' basé sur le modèle donné.
         """
-        
+
         model_class, _ = CacheService.get_model_class(model)
-        prefix = f"oi:1:{model_class.__name__}:"
+        prefix = f"oi:1:cs_{model_class.__name__}_"
         
         return prefix
 
@@ -141,7 +142,7 @@ class CacheService:
             'product_service': ProductService,
             'extract': Extract
         }
-        
+
         cache_modules = {
             'location_user': Location,
             'coverage': InsureePolicy,
@@ -162,19 +163,19 @@ class CacheService:
         CACHE_TIMEOUT = None
         BATCH_SIZE = 10000
         try:
-            
+
             if model not in CacheService.openimis_models:
                 raise ValidationError(_("Unsupported_model_for_cache_preheating"))
-            
+
             model_class, is_model = CacheService.get_model_class(model)
             all_objects = model_class.objects.filter(validity_to__isnull=True).only("id")
             cache_data = {}
-            
+
             if is_model:
                 cache = caches['default']
                 # for obj in all_objects:
                 #     cache_data[get_cache_key(model_class, obj.id)] = obj
-                    
+
                 # cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
                 for chunk in chunked_queryset(all_objects, BATCH_SIZE):
                     cache_data = {
@@ -190,7 +191,7 @@ class CacheService:
                     cache = caches[model]
                     # for obj in all_objects:
                     #     cache_data[get_cache_key_base(model, obj.id)] = obj
-                        
+
                     # cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
                     for chunk in chunked_queryset(all_objects, BATCH_SIZE):
                         cache_data = {
@@ -203,14 +204,12 @@ class CacheService:
         except Exception as exc:
             raise ValidationError(_("Error_during_cache_preheating:") + str(exc))
 
-# Generation of the object key
-def get_cache_key(model, id):
-    return f"{model.__name__}:{id}"
 
 def get_cache_key_base(model, id):
     return f"{model}_{id}"
 
 BATCH_SIZE = 10000
+
 
 def chunked_queryset(qs: QuerySet, batch_size: int):
     """
