@@ -3,10 +3,9 @@ from dataclasses import dataclass
 from unittest.mock import patch, MagicMock
 from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
 from cache_manager.schema import CacheService
-from cache_manager.services import get_cache_key, get_cache_key_base
+from cache_manager.services import get_cache_key_base
 from insuree.test_helpers import create_test_insuree
 from location.models import Location
-from insuree.models import Insuree
 from core.models import User
 from core.test_helpers import create_test_interactive_user
 from graphql_jwt.shortcuts import get_token
@@ -14,6 +13,7 @@ from location.test_helpers import create_test_village
 import os
 from django.core.exceptions import ImproperlyConfigured
 from django.conf import settings
+from core.utils import get_cache_key
 
 @dataclass
 class DummyContext:
@@ -120,8 +120,8 @@ class CacheManagerTestCase(openIMISGraphQLTestCase):
 
     def test_cache_info_query(self):
         # Populate fake Redis store with test data
-        self.fake_redis_store['oi:1:Insuree:1'] = self.test_insuree
-        self.fake_redis_store['oi:1:Location:1'] = self.location
+        self.fake_redis_store['oi:1:cs_Insuree_1'] = self.test_insuree
+        self.fake_redis_store['oi:1:cs_Location_1'] = self.location
         query = """
         query {
             cacheInfo(first: 2) {
@@ -243,4 +243,4 @@ class CacheManagerTestCase(openIMISGraphQLTestCase):
 
     def test_get_prefixed_model(self):
         prefix = CacheService.get_prefixed_model('location')
-        self.assertEqual(prefix, 'oi:1:Location:')
+        self.assertEqual(prefix, 'oi:1:cs_Location_')
