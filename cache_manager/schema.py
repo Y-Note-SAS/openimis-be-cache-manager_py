@@ -1,17 +1,14 @@
 import logging
-from django_redis.cache import RedisCache
 import graphene
 from django.core.cache import caches
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
-from location.models import free_cache_for_user, Location
 logger = logging.getLogger(__name__)
-from django.core.exceptions import ValidationError, PermissionDenied
+from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
 from core.schema import OpenIMISMutation
 # from policy.models import clean_all_enquire_cache_product
 from django.db.models import Q
-from core import filter_validity
 from cache_manager.services import CacheService
 from django.utils.translation import gettext as _
 
@@ -161,6 +158,8 @@ class ClearCacheMutation(OpenIMISMutation):
                         case "coverage":
                             # clean_all_enquire_cache_product()
                             CacheService.clear_module_cache(model)
+                        case "location":
+                            CacheService.clear_all_model_cache(model)
                         case _:
                             raise ValidationError(_("model_does_not_define"))
                 elif model in openimis_models:
