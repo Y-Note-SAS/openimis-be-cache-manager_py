@@ -168,7 +168,11 @@ class CacheService:
                 raise ValidationError(_("Unsupported_model_for_cache_preheating"))
 
             model_class, is_model = CacheService.get_model_class(model)
-            all_objects = model_class.objects.filter(validity_to__isnull=True).only("id")
+            if model == "health_facility":
+                all_objects = model_class.objects.filter(validity_to__isnull=True).only(
+                    "id", "uuid", "code", "name", "location_id")
+            else:
+                all_objects = model_class.objects.filter(validity_to__isnull=True).only("id")
             cache_data = {}
 
             if is_model:
@@ -178,10 +182,22 @@ class CacheService:
 
                 # cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
                 for chunk in chunked_queryset(all_objects, BATCH_SIZE):
-                    cache_data = {
-                        get_cache_key(model_class, obj.id): {"id": obj.id}
-                        for obj in chunk
-                    }
+                    if model == "health_facility":
+                        cache_data = {
+                            get_cache_key(model_class, obj.id): {
+                                "id": obj.id,
+                                "uuid": obj.uuid,
+                                "name": obj.name,
+                                "code": obj.code,
+                                "location_id": obj.location_id
+                            }
+                            for obj in chunk
+                        }
+                    else:
+                        cache_data = {
+                            get_cache_key(model_class, obj.id): {"id": obj.id}
+                            for obj in chunk
+                        }
                     cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
             else:
                 if model == 'location_user':
