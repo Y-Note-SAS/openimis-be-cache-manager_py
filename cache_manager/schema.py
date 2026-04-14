@@ -11,6 +11,8 @@ from core.schema import OpenIMISMutation
 from django.db.models import Q
 from cache_manager.services import CacheService
 from django.utils.translation import gettext as _
+from .apps import CacheManagerConfig
+from django.core.exceptions import PermissionDenied
 
 class CacheInfoType(graphene.ObjectType):
     cache_name = graphene.String()
@@ -49,8 +51,12 @@ class Query(graphene.ObjectType):
     )
 
     def resolve_cache_info(self, info, model=None, order_by=None, first=10, last=None, after=None, before=None):
+        if isinstance(info.context.user, AnonymousUser) or not info.context.user.id:
+            raise ValidationError(_("mutation.authentication_required"))
+        if not info.context.user.has_perms(CacheManagerConfig.gql_manage_cache_perms):
+            raise PermissionDenied(_("unauthorized"))
         openimis_models = CacheService.openimis_models
-                
+
         cache_info_list = []
         for model in openimis_models:
             model = model.lower()
@@ -142,6 +148,8 @@ class ClearCacheMutation(OpenIMISMutation):
         try:
             if type(user) is AnonymousUser or not user.id:
                 raise ValidationError(_("mutation.authentication_required"))
+            if not user.has_perms(CacheManagerConfig.gql_manage_cache_perms):
+                raise PermissionDenied(_("unauthorized"))
             models = data.get("models", None)
 
             if not models:
@@ -188,6 +196,8 @@ class PreheatCacheMutation(OpenIMISMutation):
         try:
             if user.is_anonymous or not user.id:
                 raise ValidationError(_("authentication_required"))
+            if not user.has_perms(CacheManagerConfig.gql_manage_cache_perms):
+                raise PermissionDenied(_("unauthorized"))
             
             model = data.get("model")
             if not model:
