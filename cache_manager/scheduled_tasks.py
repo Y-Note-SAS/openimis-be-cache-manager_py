@@ -9,7 +9,7 @@ def cache_prewarming_job():
     """
     Cette fonction charge les objet en cache chaque 2h:00
     """
-    _logger.info("Prewarm cache job started...")
+    _logger.warning("Prewarm cache job started...")
     admin_user = InteractiveUser.objects.filter(id=1).first()
     if not admin_user:
         _logger.warning("Utilisateur admin non trouvé")
@@ -23,6 +23,7 @@ def cache_prewarming_job():
     for model in models:
         result = CacheService.preload_model_cache(model, admin_user)
         _logger.warning("result for model %s: %s", model, result)
+    _logger.warning("Prewarm cache job finished...")
 
 
 def schedule_tasks(scheduler: BackgroundScheduler):
