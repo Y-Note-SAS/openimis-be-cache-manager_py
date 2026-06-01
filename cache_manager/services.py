@@ -169,7 +169,7 @@ class CacheService:
 
             model_class, is_model = CacheService.get_model_class(model)
             FIELDS_BY_MODEL = {
-                "insuree": ["id", "uuid", "chf_id", "last_name", "other_names",
+                "insuree": ["id", "uuid", "card_issued", "chf_id", "last_name", "other_names",
                     "email", "phone", "dob", "gender_id", "photo_id", "family_id"],
                 "family":  ["id", "location_id", "head_insuree_id"],
                 "policy":  ["id", "family_id", "officer_id", "product_id"],
