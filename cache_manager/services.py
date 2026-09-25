@@ -168,11 +168,26 @@ class CacheService:
                 raise ValidationError(_("Unsupported_model_for_cache_preheating"))
 
             model_class, is_model = CacheService.get_model_class(model)
-            if model == "health_facility":
-                all_objects = model_class.objects.filter(validity_to__isnull=True).only(
-                    "id", "uuid", "code", "name", "location_id")
-            else:
-                all_objects = model_class.objects.filter(validity_to__isnull=True).only("id")
+            FIELDS_BY_MODEL = {
+                "insuree": ["id", "uuid", "card_issued", "chf_id", "last_name", "other_names",
+                    "email", "phone", "dob", "gender_id", "photo_id", "family_id"],
+                "family":  ["id", "location_id", "head_insuree_id"],
+                "policy":  ["id", "family_id", "officer_id", "product_id"],
+                "claim":   ["id", "health_facility_id", "insuree_id", "icd_id"],
+                "insuree_policy": ["id", "insuree_id", "policy_id"],
+                "service":        ["id"],
+                "item":           ["id"],
+                "claim_service":  ["id", "claim_id", "service_id"],
+                "claim_item":     ["id", "claim_id", "item_id"],
+                "health_facility": ["id", "uuid", "code", "name", "location_id"]
+            }
+            fields = FIELDS_BY_MODEL.get(model, ["id"])
+            # if model == "health_facility":
+            #     all_objects = model_class.objects.filter(validity_to__isnull=True).only(
+            #         "id", "uuid", "code", "name", "location_id")
+            # else:
+            #     all_objects = model_class.objects.filter(validity_to__isnull=True).only("id")
+            all_objects = model_class.objects.filter(validity_to__isnull=True).only(*fields)
             cache_data = {}
 
             if is_model:
@@ -181,23 +196,15 @@ class CacheService:
                 #     cache_data[get_cache_key(model_class, obj.id)] = obj
 
                 # cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
+                fields = FIELDS_BY_MODEL.get(model, ["id"])
                 for chunk in chunked_queryset(all_objects, BATCH_SIZE):
-                    if model == "health_facility":
-                        cache_data = {
-                            get_cache_key(model_class, obj.id): {
-                                "id": obj.id,
-                                "uuid": obj.uuid,
-                                "name": obj.name,
-                                "code": obj.code,
-                                "location_id": obj.location_id
-                            }
-                            for obj in chunk
+                    cache_data = {
+                        get_cache_key(model_class, obj.id): {
+                            field: getattr(obj, field, None)
+                            for field in fields
                         }
-                    else:
-                        cache_data = {
-                            get_cache_key(model_class, obj.id): {"id": obj.id}
-                            for obj in chunk
-                        }
+                        for obj in chunk
+                    }
                     cache.set_many(cache_data, timeout=CACHE_TIMEOUT)
             else:
                 if model == 'location_user':
