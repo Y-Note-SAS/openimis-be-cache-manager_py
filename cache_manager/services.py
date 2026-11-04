@@ -171,12 +171,12 @@ class CacheService:
             FIELDS_BY_MODEL = {
                 "insuree": ["id", "uuid", "card_issued", "chf_id", "last_name", "other_names",
                     "email", "phone", "dob", "gender_id", "photo_id", "family_id"],
-                "family":  ["id", "location_id", "head_insuree_id"],
-                "policy":  ["id", "family_id", "officer_id", "product_id"],
-                "claim":   ["id", "health_facility_id", "insuree_id", "icd_id"],
+                "family":  ["id", "uuid", "location_id", "head_insuree_id"],
+                "policy":  ["id", "uuid", "family_id", "officer_id", "product_id"],
+                "claim":   ["id", "uuid",  "health_facility_id", "insuree_id", "icd_id"],
                 "insuree_policy": ["id", "insuree_id", "policy_id"],
-                "service":        ["id"],
-                "item":           ["id"],
+                "service":        ["id", "uuid"],
+                "item":           ["id", "uuid"],
                 "claim_service":  ["id", "claim_id", "service_id"],
                 "claim_item":     ["id", "claim_id", "item_id"],
                 "health_facility": ["id", "uuid", "code", "name", "location_id"]
